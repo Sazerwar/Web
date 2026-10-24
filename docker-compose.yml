@@ -1,0 +1,118 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: heavy_tasks_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres}
+      POSTGRES_DB: ${DB_NAME:-heavy_tasks_db}
+    ports:
+      - "${DB_PORT:-5432}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    networks:
+      - cluster_net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: heavy_tasks_redis
+    restart: unless-stopped
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redisdata:/data
+    networks:
+      - cluster_net
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  node-app-1:
+    build: .
+    container_name: node-app-1
+    restart: unless-stopped
+    environment:
+      PORT: 3000
+      SERVER_ID: node-app-1
+      NODE_ENV: production
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USER: ${DB_USER:-postgres}
+      DB_PASSWORD: ${DB_PASSWORD:-postgres}
+      DB_NAME: ${DB_NAME:-heavy_tasks_db}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      JWT_SECRET: ${JWT_SECRET:-super_secret_jwt_key_for_heavy_tasks_2026}
+      MAX_MATRIX_SIZE: ${MAX_MATRIX_SIZE:-3000}
+      MAX_ITERATIONS: ${MAX_ITERATIONS:-50000}
+      MAX_EXECUTION_TIME_SEC: ${MAX_EXECUTION_TIME_SEC:-60}
+      MAX_USER_TASKS_HISTORY: ${MAX_USER_TASKS_HISTORY:-20}
+      MAX_CONCURRENT_TASKS_PER_SERVER: ${MAX_CONCURRENT_TASKS_PER_SERVER:-2}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - cluster_net
+
+  node-app-2:
+    build: .
+    container_name: node-app-2
+    restart: unless-stopped
+    environment:
+      PORT: 3000
+      SERVER_ID: node-app-2
+      NODE_ENV: production
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USER: ${DB_USER:-postgres}
+      DB_PASSWORD: ${DB_PASSWORD:-postgres}
+      DB_NAME: ${DB_NAME:-heavy_tasks_db}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      JWT_SECRET: ${JWT_SECRET:-super_secret_jwt_key_for_heavy_tasks_2026}
+      MAX_MATRIX_SIZE: ${MAX_MATRIX_SIZE:-3000}
+      MAX_ITERATIONS: ${MAX_ITERATIONS:-50000}
+      MAX_EXECUTION_TIME_SEC: ${MAX_EXECUTION_TIME_SEC:-60}
+      MAX_USER_TASKS_HISTORY: ${MAX_USER_TASKS_HISTORY:-20}
+      MAX_CONCURRENT_TASKS_PER_SERVER: ${MAX_CONCURRENT_TASKS_PER_SERVER:-2}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - cluster_net
+
+  load-balancer:
+    image: nginx:1.27-alpine
+    container_name: heavy_tasks_load_balancer
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/certs:/etc/nginx/certs:ro
+    depends_on:
+      - node-app-1
+      - node-app-2
+    networks:
+      - cluster_net
+
+networks:
+  cluster_net:
+    driver: bridge
+
+volumes:
+  pgdata:
+  redisdata:
